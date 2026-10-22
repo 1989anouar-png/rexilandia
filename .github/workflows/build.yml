@@ -1,0 +1,40 @@
+name: Generar AAB Android
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias web
+        run: npm install
+
+      - name: Configurar Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Dar permisos a Gradle
+        run: chmod +x android/gradlew
+
+      - name: Compilar AAB (Release)
+        run: |
+          cd android
+          ./gradlew bundleRelease
+
+      - name: Subir AAB generado
+        uses: actions/upload-artifact@v4
+        with:
+          name: rexilandia-app-release
+          path: android/app/build/outputs/bundle/release/*.aab
