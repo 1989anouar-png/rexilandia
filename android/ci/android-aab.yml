@@ -1,0 +1,75 @@
+name: Generar AAB
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - "android-shell/**"
+      - "src/**"
+      - "public/**"
+      - "vite.android.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/android-aab.yml"
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: SDK de Android
+        uses: android-actions/setup-android@v3
+
+      - name: Plataforma API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Dependencias web
+        run: npm ci
+
+      - name: Clave de firma, si está en los secretos
+        env:
+          B64: ${{ secrets.REXILANDIA_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.REXILANDIA_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.REXILANDIA_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.REXILANDIA_KEY_PASSWORD }}
+        run: |
+          if [ -n "$B64" ]; then
+            echo "$B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+            echo "REXILANDIA_STORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+            echo "REXILANDIA_STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "REXILANDIA_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "REXILANDIA_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          else
+            echo "Sin clave en los secretos: el AAB saldrá sin firmar y Play no lo aceptará."
+          fi
+
+      - name: Compilar bundleRelease
+        working-directory: android
+        run: chmod +x ./gradlew && ./gradlew bundleRelease --stacktrace
+
+      - name: Marcar el AAB si no está firmado
+        run: |
+          if [ -z "$REXILANDIA_STORE_FILE" ]; then
+            mv android/app/build/outputs/bundle/release/*.aab android/app/build/outputs/bundle/release/rexilandia-sin-firmar.aab
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rexilandia-aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          retention-days: 14
